@@ -1,7 +1,7 @@
-streamlit
-openai
-pypdf
-python-docx
-pillow
-pytesseract
-faiss 
+streamlit 
+openai 
+pypdf 
+python-docx 
+pillow 
+pytesseract 
+faiss-cpu 
