@@ -4,4 +4,4 @@ pypdf
 python-docx
 pillow
 pytesseract
-faiss
+faiss 
