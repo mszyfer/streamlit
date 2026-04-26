@@ -28,13 +28,7 @@ if prompt := st.chat_input():
     response = client.chat.completions.create(
     model=selected_model,
     messages=[
-        {   "role": "system",
-            "content": "You are a helpful assistant."
-        },
-        {
-            "role": "user",
-            "content": "Explain to me how AI works"
-        }
+        msg,
     ]
 )
 
