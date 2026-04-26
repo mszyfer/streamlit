@@ -19,10 +19,24 @@ if prompt := st.chat_input():
     if not api_key:
         st.info("Invalid API key.")
         st.stop()
-    client = ...
+    client = OpenAI(
+    api_key=api_key,
+    base_url=base_url
+)
     st.session_state.messages.append({"role": "user", "content": prompt})
     st.chat_message("user").write(prompt)
-    response = ...
+    response = client.chat.completions.create(
+    model=selected_model,
+    messages=[
+        {   "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "Explain to me how AI works"
+        }
+    ]
+)
 
     msg = response.choices[0].message.content
     st.session_state.messages.append({"role": "assistant", "content": msg})
