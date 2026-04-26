@@ -2,77 +2,60 @@ import streamlit as st
 from openai import OpenAI
 
 st.set_page_config(layout="wide", page_title="Gemini chatbot app")
-
-# 🔧 CSS
-st.markdown("""
-<style>
-.bottom-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: white;
-    padding: 10px;
-    border-top: 1px solid #ddd;
-    z-index: 999;
-}
-</style>
-""", unsafe_allow_html=True)
-
 st.title("Gemini chatbot app")
 
 api_key, base_url = st.secrets["API_KEY"], st.secrets["BASE_URL"]
 selected_model = "gemini-2.5-flash"
 
-# 🧠 pamięć
+# 🧠 pamięć rozmowy
 if "messages" not in st.session_state:
-    st.session_state.messages = [
+    st.session_state["messages"] = [
         {"role": "assistant", "content": "How can I help you?"}
     ]
 
+# 📂 uploader w session state
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
 
-# 📜 chat
+# 📜 historia
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 📎 pliki nad inputem
+# 🔽 NAZWA PLIKÓW NAD INPUTEM
 if st.session_state.uploaded_files:
-    st.markdown("**📎 Uploaded files:**")
+    st.markdown("**Uploaded files:**")
     for f in st.session_state.uploaded_files:
-        st.write(f"• {f.name}")
+        st.write(f"📄 {f.name}")
 
-# 🔽 PANEL NA DOLE
-st.markdown('<div class="bottom-bar">', unsafe_allow_html=True)
-
-col1, col2, col3 = st.columns([1, 8, 1])
+# 🎛️ layout: plus + input
+col1, col2 = st.columns([1, 10])
 
 with col1:
-    files = st.file_uploader(
+    new_files = st.file_uploader(
         "➕",
         label_visibility="collapsed",
         accept_multiple_files=True,
         type=["txt"]
     )
-    if files:
-        st.session_state.uploaded_files.extend(files)
+
+    if new_files:
+        st.session_state.uploaded_files.extend(new_files)
 
 with col2:
-    prompt = st.text_input("Message", label_visibility="collapsed")
+    prompt = st.chat_input("Type your message...")
 
-with col3:
-    send = st.button("➡️")
+# 💬 obsługa wiadomości
+if prompt:
+    if not api_key:
+        st.info("Invalid API key.")
+        st.stop()
 
-st.markdown('</div>', unsafe_allow_html=True)
-
-# 💬 wysyłanie
-if send and prompt:
     client = OpenAI(api_key=api_key, base_url=base_url)
 
+    # 📄 czytanie plików
     file_contents = ""
     for file in st.session_state.uploaded_files:
-        content = file.getvalue().decode("utf-8")
+        content = file.read().decode("utf-8")
         file_contents += f"\n\nFile: {file.name}\n{content}"
 
     full_prompt = prompt
