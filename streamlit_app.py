@@ -4,16 +4,24 @@ from pypdf import PdfReader
 from docx import Document
 from PIL import Image
 import pytesseract
-import io
+import numpy as np
+import faiss
 
-st.set_page_config(layout="wide", page_title="Gemini chatbot app")
-st.title("Gemini chatbot app")
+from langchain_huggingface import HuggingFaceEmbeddings
+from embedder_rag import FAISSIndex
+
+
+st.set_page_config(layout="wide", page_title="RAG chatbot app")
+st.title("RAG chatbot app")
+
 
 api_key = st.secrets["API_KEY"]
 base_url = st.secrets["BASE_URL"]
 selected_model = "gemini-2.5-flash"
 
 MAX_FILE_CHARS = 10000
+
+
 
 def read_txt(file):
     return file.read().decode("utf-8", errors="ignore")
@@ -34,11 +42,10 @@ def read_docx(file):
 
 def read_image(file):
     image = Image.open(file)
-
     try:
         return pytesseract.image_to_string(image)
     except Exception:
-        return "[IMAGE UPLOADED - OCR NOT AVAILABLE ON DEPLOYMENT]"
+        return "[OCR not available]"
 
 
 def extract_file_content(file):
@@ -57,11 +64,25 @@ def extract_file_content(file):
 
 
 
-uploaded_files = st.file_uploader(
-    "Upload files",
-    accept_multiple_files=True,
-    type=["txt", "pdf", "docx", "png", "jpg", "jpeg"]
-)
+@st.cache_resource
+def get_embeddings():
+    return HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"}
+    )
+
+
+
+def build_index(texts, metadata, embeddings):
+    vectors = [embeddings.embed_query(t) for t in texts]
+    vectors = np.array(vectors).astype("float32")
+
+    dim = vectors.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(vectors)
+
+    return FAISSIndex(index, metadata)
+
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
@@ -72,42 +93,74 @@ for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 
+uploaded_files = st.file_uploader(
+    "Upload files",
+    accept_multiple_files=True,
+    type=["txt", "pdf", "docx", "png", "jpg", "jpeg"]
+)
+
+if uploaded_files:
+    texts = []
+    metadata = []
+
+    embeddings = get_embeddings()
+
+    for file in uploaded_files:
+        content = extract_file_content(file)
+
+        chunks = [content[i:i+1000] for i in range(0, len(content), 1000)]
+
+        for chunk in chunks:
+            texts.append(chunk)
+            metadata.append({
+                "filename": file.name,
+                "text": chunk
+            })
+
+    st.session_state["faiss"] = build_index(texts, metadata, embeddings)
+
+
+
 if prompt := st.chat_input():
 
     if not api_key:
-        st.info("Invalid API key.")
+        st.info("Missing API key.")
         st.stop()
 
     client = OpenAI(api_key=api_key, base_url=base_url)
 
-    file_contents = ""
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.chat_message("user").write(prompt)
 
-    if uploaded_files:
-        for file in uploaded_files:
-            content = extract_file_content(file)
-            file_contents += f"\n\nFILE: {file.name}\n{content}"
 
-    file_contents = file_contents[:MAX_FILE_CHARS]
+
+    context = ""
+
+    if "faiss" in st.session_state:
+        results = st.session_state["faiss"].similarity_search(prompt, k=3)
+
+        context = "\n\n".join(
+            f"[{r['filename']}]\n{r['text']}"
+            for r in results
+        )
+
 
     messages = st.session_state.messages.copy()
 
-    if file_contents:
-        messages.append({
+    if context:
+        messages.insert(0, {
             "role": "system",
-            "content": f"Context from uploaded files:\n{file_contents}"
+            "content": f"Use this context to answer:\n\n{context}"
         })
 
-    messages.append({"role": "user", "content": prompt})
 
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
 
     response = client.chat.completions.create(
         model=selected_model,
         messages=messages
     )
 
-    msg = response.choices[0].message.content
+    answer = response.choices[0].message.content
 
-    st.session_state.messages.append({"role": "assistant", "content": msg})
-    st.chat_message("assistant").write(msg)
+    st.session_state.messages.append({"role": "assistant", "content": answer})
+    st.chat_message("assistant").write(answer)
